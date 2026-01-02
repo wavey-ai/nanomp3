@@ -47,9 +47,12 @@ impl Decoder {
 
     /// Decode MP3 data into a buffer, returning the amount of MP3 data consumed and info about decoded samples.
     /// `mp3` should contain at least several frames worth of data at any given time (16KiB recommended) to avoid artifacting.
-    /// 
+    ///
+    /// Returns `(consumed_bytes, frame_info)`. When no frame can be decoded (insufficient data),
+    /// returns `(0, None)` so the caller knows to accumulate more data before retrying.
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if `pcm` is less than [`MAX_SAMPLES_PER_FRAME`] long.
     pub fn decode(&mut self, mp3: &[u8], pcm: &mut [f32]) -> (usize, Option<FrameInfo>) {
         assert!(pcm.len() >= MAX_SAMPLES_PER_FRAME, "pcm buffer too small");
@@ -63,19 +66,23 @@ impl Decoder {
             &mut info
         ) };
 
-        (
-            info.frame_bytes.try_into().unwrap(),
-            (samples != 0).then(|| FrameInfo {
-                samples_produced: samples.try_into().unwrap(),
-                channels: match info.channels {
-                    1 => Channels::Mono,
-                    2 => Channels::Stereo,
-                    _ => unreachable!()
-                },
-                sample_rate: info.hz.try_into().unwrap(),
-                bitrate: info.bitrate_kbps.try_into().unwrap()
-            })
-        )
+        if samples != 0 {
+            (
+                info.frame_bytes.try_into().unwrap(),
+                Some(FrameInfo {
+                    samples_produced: samples.try_into().unwrap(),
+                    channels: match info.channels {
+                        1 => Channels::Mono,
+                        2 => Channels::Stereo,
+                        _ => unreachable!()
+                    },
+                    sample_rate: info.hz.try_into().unwrap(),
+                    bitrate: info.bitrate_kbps.try_into().unwrap()
+                })
+            )
+        } else {
+            (0, None)
+        }
     }
 }
 
